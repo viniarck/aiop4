@@ -1,5 +1,5 @@
 <div align="center">
-  <h1><code>p4runtime_client</code></h1>
+  <h1><code>aiop4</code></h1>
 
-  <strong>Python gRPC client for P4Runtime</strong>
+  <strong>asyncio P4Runtime Python client 🐍</strong>
 </div>

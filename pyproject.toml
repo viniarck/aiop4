@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "p4runtime-client"
+name = "aiop4"
 version = "0.1.0"
-description = ""
+description = "asyncio P4Runtime Python client"
 authors = ["Vinicius Arcanjo <viniarck@gmail.com>"]
 
 [tool.poetry.dependencies]

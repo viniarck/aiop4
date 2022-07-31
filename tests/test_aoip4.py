@@ -1,4 +1,4 @@
-from p4runtime_client import __version__
+from aiop4 import __version__
 
 
 def test_version():
