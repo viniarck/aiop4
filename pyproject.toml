@@ -3,11 +3,17 @@ name = "aiop4"
 version = "0.1.0"
 description = "asyncio P4Runtime Python client"
 authors = ["Vinicius Arcanjo <viniarck@gmail.com>"]
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/viniarck/aiop4"
+keywords = ["p4", "p4runtime", "p4runtime-client", "client", "aiop4"]
 
 [tool.poetry.dependencies]
 python = "^3.10"
 p4runtime = "1.4.0rc5"
-grpcio = "^1.48.0"
+grpcio = "1.46.3"
+googleapis-common-protos = "1.54.0"
+protobuf = "3.18.1"
 
 [tool.poetry.dev-dependencies]
 pytest = "^7.1"
@@ -15,6 +21,8 @@ pre-commit = "^2.20"
 flake8 = "^5.0"
 black = "^22.6"
 isort = "^5.10"
+tox = "^3.25"
+pytest-cov = "^3.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
