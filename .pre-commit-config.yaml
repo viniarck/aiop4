@@ -1,0 +1,22 @@
+# Pre-commit git hooks, run locally before every commit. To init:
+# $ poetry install
+# $ pre-commit install
+
+repos:
+-   repo: https://github.com/ambv/black
+    rev: 22.6.0
+    hooks:
+    - id: black
+      language_version: python3
+-   repo: https://github.com/pycqa/isort
+    rev: 5.10.1
+    hooks:
+    - id: isort
+      args: ["--profile", "black", "--filter-files"]
+-   repo: https://github.com/pycqa/flake8
+    rev: 5.0.4
+    hooks:
+    - id: flake8
+      args:
+        # line length compatible with black
+        - "--max-line-length=88"
