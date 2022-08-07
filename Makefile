@@ -7,4 +7,7 @@ test-cov:
 	poetry run pytest --cov=aiop4 --cov-fail-under=85 tests/ $(args)
 
 lint:
-	black --check aiop4/ tests/
+	poetry run black --check aiop4/ tests/
+
+test-tox:
+	poetry run tox
