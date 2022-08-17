@@ -1,5 +1,7 @@
+from pathlib import Path
 from typing import Optional
 
+import p4.v1.p4runtime_pb2 as p4r_pb2
 from google.protobuf import text_format
 from p4.config.v1.p4info_pb2 import (
     Action,
@@ -32,8 +34,6 @@ P4InfoObject = (
     | Extern
 )
 
-# TODO what about pre-index all of this by preamble id?
-
 
 def get_by_preamble_attr(
     p4_info: P4Info, iter_name: str, value: str, preamble_attr="name", default=None
@@ -64,16 +64,24 @@ def find_by_preamble_attr(
     )
 
 
-def read_p4_info_txt(path: str) -> P4Info:
+def find_match_field(p4_info: P4Info, table: str, name: str) -> p4r_pb2.FieldMatch:
+    """Find match field."""
+    table = find_by_preamble_attr(p4_info, "tables", table)
+    res = next(
+        (match_field for match_field in table.match_fields if match_field.name == name),
+        None,
+    )
+    if res:
+        return res
+    raise ValueError(f"MatchField {name} not found in {table}")
+
+
+def read_p4_info_txt(file_path: str) -> P4Info:
     """Read p4_info.txt file."""
     p4_info = P4Info()
-    with open(path, "r") as f:
-        content = f.read()
-        text_format.Parse(content, p4_info)
+    text_format.Parse(Path(file_path).expanduser().read_text(), p4_info)
     return p4_info
 
 
 def read_bytes_config(config_json_path: str) -> bytes:
-    with open(config_json_path, "rb") as f:
-        bytes_config = f.read()
-        return bytes_config
+    return Path(config_json_path).expanduser().read_bytes()
