@@ -30,6 +30,7 @@ class Client:
         self.p4_info: p4info_pb2.P4Info = None
         self._channel = grpc.aio.insecure_channel(self.host)
         self._stub = p4r_grpc.P4RuntimeStub(self._channel)
+        self.queue: asyncio.Queue = asyncio.Queue()
 
     async def get_capabilities(self) -> str:
         """GetCapabilities. Get P4Runtime API version implemented by the server."""
@@ -68,7 +69,7 @@ class Client:
                 )
                 match which_update:
                     case "digest":
-                        pass
+                        await self.queue.put(response)
                     case "arbitration":
                         event.set()
                     case "packet":
@@ -182,13 +183,16 @@ class Client:
         return await self._write_request(update)
 
     async def new_table_entry(
-        self, table: str, action: str, action_params, is_default_action=False
+        self,
+        table: str,
+        action: str,
+        action_params,
+        priority=0,
+        is_default_action=False,
     ):
         """new_table_entry."""
         table = find_by_preamble_attr(self.p4_info, "tables", table)
-        log.info(f"table {table}")
         action = find_by_preamble_attr(self.p4_info, "actions", action)
-        log.info(f"action {action}")
 
         update = p4r_pb2.Update(
             type=p4r_pb2.Update.Type.MODIFY,
@@ -204,6 +208,7 @@ class Client:
                             ],
                         )
                     ),
+                    priority=priority,
                     is_default_action=is_default_action,
                 )
             ),
