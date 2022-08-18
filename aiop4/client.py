@@ -10,6 +10,8 @@ from p4.config.v1 import p4info_pb2
 
 from aiop4.p4_info import find_by_preamble_attr, read_bytes_config, read_p4_info_txt
 
+from .p4info_indexer import P4InfoIndexer
+
 log = logging.getLogger(__name__)
 
 
@@ -27,7 +29,7 @@ class Client:
         self.host = host
         self.device_id = device_id
         self.election_id = election_id
-        self.p4_info: p4info_pb2.P4Info = None
+        self.p4info: p4info_pb2.P4Info = None
         self._channel = grpc.aio.insecure_channel(self.host)
         self._stub = p4r_grpc.P4RuntimeStub(self._channel)
         self.queue: asyncio.Queue = asyncio.Queue()
@@ -138,7 +140,8 @@ class Client:
             raise
 
         pipeline = await self.get_fwd_pipeline()
-        self.p4_info = pipeline.config.p4info
+        self.p4info = pipeline.config.p4info
+        self.p4info_indexer = P4InfoIndexer(self.p4info)
 
         return response
 
@@ -152,13 +155,13 @@ class Client:
         """set_forwarding_pipeline_config."""
 
         loop = asyncio.get_running_loop()
-        p4_info, device_config = await asyncio.gather(
+        p4info, device_config = await asyncio.gather(
             loop.run_in_executor(None, read_p4_info_txt, p4_info_txt_path),
             loop.run_in_executor(None, read_bytes_config, config_json_path),
         )
         return await self._set_fwd_pipeline(
             p4r_pb2.ForwardingPipelineConfig(
-                p4info=p4_info,
+                p4info=p4info,
                 p4_device_config=device_config,
                 cookie=p4r_pb2.ForwardingPipelineConfig.Cookie(cookie=cookie),
             )
@@ -186,19 +189,22 @@ class Client:
         self,
         table: str,
         action: str,
-        action_params,
+        action_params: list[bytes],
+        match_fields: list[p4info_pb2.MatchField] = None,
         priority=0,
-        is_default_action=False,
+        idle_timeout_ns=0,
     ):
         """new_table_entry."""
-        table = find_by_preamble_attr(self.p4_info, "tables", table)
-        action = find_by_preamble_attr(self.p4_info, "actions", action)
+        match_fields = match_fields if match_fields else []
+        table = find_by_preamble_attr(self.p4info, "tables", table)
+        action = find_by_preamble_attr(self.p4info, "actions", action)
 
         update = p4r_pb2.Update(
             type=p4r_pb2.Update.Type.MODIFY,
             entity=p4r_pb2.Entity(
                 table_entry=p4r_pb2.TableEntry(
                     table_id=table.preamble.id,
+                    match=match_fields,
                     action=p4r_pb2.TableAction(
                         action=p4r_pb2.Action(
                             action_id=action.preamble.id,
@@ -209,7 +215,8 @@ class Client:
                         )
                     ),
                     priority=priority,
-                    is_default_action=is_default_action,
+                    idle_timeout_ns=idle_timeout_ns,
+                    is_default_action=False if match_fields else True,
                 )
             ),
         )
