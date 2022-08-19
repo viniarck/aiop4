@@ -8,7 +8,7 @@ import p4.v1.p4runtime_pb2_grpc as p4r_grpc
 from grpc.aio import AioRpcError
 from p4.config.v1 import p4info_pb2
 
-from aiop4.p4_info import find_by_preamble_attr, read_bytes_config, read_p4_info_txt
+from aiop4.p4_info import read_bytes_config, read_p4_info_txt
 
 from .p4info_indexer import P4InfoIndexer
 
@@ -185,39 +185,61 @@ class Client:
         )
         return await self._write_request(update)
 
-    async def new_table_entry(
+    async def modify_entity(self, *entities: p4r_pb2.Entity) -> None:
+        """Modify entities."""
+        return await self._op_entity(*entities, op_type=p4r_pb2.Update.Type.MODIFY)
+
+    async def insert_entity(self, *entities: p4r_pb2.Entity) -> None:
+        """Insert entities."""
+        return await self._op_entity(*entities, op_type=p4r_pb2.Update.Type.INSERT)
+
+    async def delete_entity(self, *entities: p4r_pb2.Entity) -> None:
+        """Delete entities."""
+        return await self._op_entity(*entities, op_type=p4r_pb2.Update.Type.DELETE)
+
+    async def _op_entity(self, *entities, op_type: int):
+        """Perform operations on entities."""
+        try:
+            payload = [
+                p4r_pb2.Update(
+                    type=op_type,
+                    entity=entity,
+                )
+                for entity in entities
+            ]
+            return await self._write_request(*payload)
+        except AioRpcError as exc:
+            log.error(f"{str(exc)} payload {payload}")
+            raise
+
+    def new_table_entry(
         self,
         table: str,
+        field_matches: list[p4r_pb2.FieldMatch],
         action: str,
         action_params: list[bytes],
-        match_fields: list[p4info_pb2.MatchField] = None,
         priority=0,
         idle_timeout_ns=0,
-    ):
+    ) -> p4r_pb2.Entity:
         """new_table_entry."""
-        match_fields = match_fields if match_fields else []
-        table = find_by_preamble_attr(self.p4info, "tables", table)
-        action = find_by_preamble_attr(self.p4info, "actions", action)
-
-        update = p4r_pb2.Update(
-            type=p4r_pb2.Update.Type.MODIFY,
-            entity=p4r_pb2.Entity(
-                table_entry=p4r_pb2.TableEntry(
-                    table_id=table.preamble.id,
-                    match=match_fields,
-                    action=p4r_pb2.TableAction(
-                        action=p4r_pb2.Action(
-                            action_id=action.preamble.id,
-                            params=[
-                                p4r_pb2.Action.Param(param_id=i, value=v)
-                                for i, v in enumerate(action_params, 1)
-                            ],
-                        )
-                    ),
-                    priority=priority,
-                    idle_timeout_ns=idle_timeout_ns,
-                    is_default_action=False if match_fields else True,
-                )
-            ),
+        # TODO raise specific err
+        table = self.p4info_indexer.tables[table]
+        action = self.p4info_indexer.actions[action]
+        return p4r_pb2.Entity(
+            table_entry=p4r_pb2.TableEntry(
+                table_id=table.preamble.id,
+                match=field_matches,
+                action=p4r_pb2.TableAction(
+                    action=p4r_pb2.Action(
+                        action_id=action.preamble.id,
+                        params=[
+                            p4r_pb2.Action.Param(param_id=i, value=v)
+                            for i, v in enumerate(action_params, 1)
+                        ],
+                    )
+                ),
+                priority=priority,
+                idle_timeout_ns=idle_timeout_ns,
+                is_default_action=False if field_matches else True,
+            )
         )
-        return await self._write_request(update)
