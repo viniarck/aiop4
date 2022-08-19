@@ -2,8 +2,11 @@ from p4.config.v1.p4info_pb2 import P4Info
 
 
 class P4InfoIndexer:
+    """P4InfoIndexer.
 
-    """P4InfoIndexer."""
+    This class is responsible for indexing P4Info objects by a given attribute.
+    By default it'll index objects by their fully qualified name.
+    """
 
     def __init__(self, p4info: P4Info, iter_attr="name") -> None:
         """P4InfoIndexer."""
@@ -23,7 +26,6 @@ class P4InfoIndexer:
         self.table_match_fields = self._index_by_table_match_fields(iter_attr)
 
     def _index_by_table_match_fields(self, iter_attr="name") -> dict:
-        """index by table_match_fields."""
         table_match_fields = {}
         for table_name, table in self.tables.items():
             for match_field in table.match_fields:
@@ -32,7 +34,6 @@ class P4InfoIndexer:
         return table_match_fields
 
     def _index_by_preamble(self, iter_name: str, iter_attr="name") -> dict:
-        """Index an iterable by preamble name."""
         return {
             getattr(item.preamble, iter_attr): item
             for item in getattr(self.p4info, iter_name, [])
