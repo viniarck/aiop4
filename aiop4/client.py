@@ -16,7 +16,6 @@ log = logging.getLogger(__name__)
 
 
 class Client:
-
     """asyncio P4Runtime Client."""
 
     def __init__(
@@ -25,14 +24,17 @@ class Client:
         device_id=0,
         election_id=p4r_pb2.Uint128(high=1, low=0),
     ) -> None:
-        """Client."""
+        """asyncio P4Runtime Client."""
         self.host = host
         self.device_id = device_id
         self.election_id = election_id
         self.p4info: p4info_pb2.P4Info = None
+
+        self.queue: asyncio.Queue = asyncio.Queue()
+
+        self.stream_channel: grpc.StreamStreamMultiCallable = None
         self._channel = grpc.aio.insecure_channel(self.host)
         self._stub = p4r_grpc.P4RuntimeStub(self._channel)
-        self.queue: asyncio.Queue = asyncio.Queue()
 
     async def get_capabilities(self) -> str:
         """GetCapabilities. Get P4Runtime API version implemented by the server."""
@@ -46,15 +48,16 @@ class Client:
 
     async def stream_control(self, event: asyncio.Event):
         """stream_control."""
+        # TODO rename as start or fail or something similar
         # TODO handle this better
-        streaming = self._stub.StreamChannel()
+        self.stream_channel = self._stub.StreamChannel()
         req = p4r_pb2.StreamMessageRequest(
             arbitration=p4r_pb2.MasterArbitrationUpdate(
                 device_id=self.device_id, election_id=self.election_id
             )
         )
         try:
-            await streaming.write(req)
+            await self.stream_channel.write(req)
         except AioRpcError as exc:
             log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
             raise
@@ -63,7 +66,7 @@ class Client:
             response = None
             log.info(f"Started stream_control for device_id {self.device_id}")
             while response != grpc.aio.EOF:
-                response = await streaming.read()
+                response = await self.stream_channel.read()
                 which_update = response.WhichOneof("update")
                 log.debug(
                     f"Got message {which_update} from device {self.device_id} "
@@ -120,6 +123,19 @@ class Client:
             ),
         )
         return await self._write_request(update)
+
+    async def ack_digest_list(self, digest: p4r_pb2.DigestList) -> None:
+        """Ack DigestList."""
+        req = p4r_pb2.StreamMessageRequest(
+            digest_ack=p4r_pb2.DigestListAck(
+                digest_id=digest.digest_id, list_id=digest.list_id
+            )
+        )
+        try:
+            await self.stream_channel.write(req)
+        except AioRpcError as exc:
+            log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
+            raise
 
     async def _set_fwd_pipeline(
         self,
