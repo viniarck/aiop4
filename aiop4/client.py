@@ -10,6 +10,7 @@ from p4.config.v1 import p4info_pb2
 
 from aiop4.p4_info import read_bytes_config, read_p4_info_txt
 
+from .exceptions import BecomePrimaryException
 from .p4info_indexer import P4InfoIndexer
 
 log = logging.getLogger(__name__)
@@ -29,12 +30,40 @@ class Client:
         self.device_id = device_id
         self.election_id = election_id
         self.p4info: p4info_pb2.P4Info = None
+        self.p4info_indexer: P4InfoIndexer = None
 
         self.queue: asyncio.Queue = asyncio.Queue()
 
-        self.stream_channel: grpc.StreamStreamMultiCallable = None
+        self._stream_channel: grpc.StreamStreamMultiCallable = None
         self._channel = grpc.aio.insecure_channel(self.host)
         self._stub = p4r_grpc.P4RuntimeStub(self._channel)
+        self._is_primary = asyncio.Event()
+        self._stream_control_task: asyncio.Task = None
+
+    def is_primary(self) -> bool:
+        """Check if this client is the primary controller."""
+        if self._is_primary.is_set():
+            return True
+        return False
+
+    @property
+    def stream_channel(self) -> grpc.StreamStreamMultiCallable:
+        """Client's stream control channel."""
+        if not self._stream_channel:
+            self._stream_channel = self._stub.StreamChannel()
+        return self._stream_channel
+
+    async def become_primary_or_raise(self, *, timeout=5) -> None:
+        """Try to become the primary controller or raise asyncio.TimeoutError."""
+        task = asyncio.create_task(self.try_to_become_primary())
+        try:
+            await asyncio.wait_for(self._is_primary.wait(), timeout)
+        except asyncio.TimeoutError:
+            if task.exception():
+                raise asyncio.TimeoutError(str(task._exception))
+            task.cancel()
+            self._stream_channel = None
+            raise
 
     async def get_capabilities(self) -> str:
         """GetCapabilities. Get P4Runtime API version implemented by the server."""
@@ -46,11 +75,8 @@ class Client:
             p4r_pb2.GetForwardingPipelineConfigRequest(device_id=self.device_id)
         )
 
-    async def stream_control(self, event: asyncio.Event):
-        """stream_control."""
-        # TODO rename as start or fail or something similar
-        # TODO handle this better
-        self.stream_channel = self._stub.StreamChannel()
+    async def try_to_become_primary(self):
+        """Try to become primary."""
         req = p4r_pb2.StreamMessageRequest(
             arbitration=p4r_pb2.MasterArbitrationUpdate(
                 device_id=self.device_id, election_id=self.election_id
@@ -59,14 +85,31 @@ class Client:
         try:
             await self.stream_channel.write(req)
         except AioRpcError as exc:
+            # TODO better format this
             log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
             raise
 
+        response = await self.stream_channel.read()
+        which_update = response.WhichOneof("update")
+        log.debug(
+            f"Got message {which_update} from device {self.device_id} "
+            f"{self.host} {response}"
+        )
+        if which_update == "arbitration":
+            self._is_primary.set()
+        else:
+            raise BecomePrimaryException(f"Unexpected update type {response}")
+
+        self._stream_control_task = asyncio.create_task(self.stream_control())
+
+    async def stream_control(self):
+        """stream_control."""
         try:
-            response = None
-            log.info(f"Started stream_control for device_id {self.device_id}")
+            log.info(
+                f"Starting stream_control for device_id {self.device_id} {self.host}"
+            )
+            response = await self.stream_channel.read()
             while response != grpc.aio.EOF:
-                response = await self.stream_channel.read()
                 which_update = response.WhichOneof("update")
                 log.debug(
                     f"Got message {which_update} from device {self.device_id} "
@@ -76,7 +119,7 @@ class Client:
                     case "digest":
                         await self.queue.put(response)
                     case "arbitration":
-                        event.set()
+                        pass
                     case "packet":
                         pass
                     case "idle_timeout_notification":
@@ -87,6 +130,7 @@ class Client:
                         pass
                     case _:
                         log.warning(f"Got unsupported update type {response}")
+                response = await self.stream_channel.read()
 
         except AioRpcError as e:
             log.warning(f"AioRpcError {str(e)} {e.code()}")
