@@ -8,7 +8,7 @@ import p4.v1.p4runtime_pb2_grpc as p4r_grpc
 from grpc.aio import AioRpcError
 from p4.config.v1 import p4info_pb2
 
-from aiop4.p4_info import read_bytes_config, read_p4_info_txt
+from aiop4.utils import read_bytes_config, read_p4info_txt
 
 from .exceptions import BecomePrimaryException
 from .p4info_indexer import P4InfoIndexer
@@ -216,7 +216,7 @@ class Client:
 
         loop = asyncio.get_running_loop()
         p4info, device_config = await asyncio.gather(
-            loop.run_in_executor(None, read_p4_info_txt, p4_info_txt_path),
+            loop.run_in_executor(None, read_p4info_txt, p4_info_txt_path),
             loop.run_in_executor(None, read_bytes_config, config_json_path),
         )
         return await self._set_fwd_pipeline(
