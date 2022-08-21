@@ -1,8 +1,13 @@
 from unittest.mock import AsyncMock
 
 import pytest
+from google.protobuf import text_format
+from p4.config.v1.p4info_pb2 import P4Info
 
 from aiop4.client import Client
+from aiop4.p4info_indexer import P4InfoIndexer
+
+from .data import p4info_data
 
 
 @pytest.fixture
@@ -13,3 +18,17 @@ def client() -> Client:
     client._stream_channel = AsyncMock()
     client._channel = AsyncMock()
     return client
+
+
+@pytest.fixture
+def p4info() -> P4Info:
+    """P4Info."""
+    p4_info = P4Info()
+    text_format.Parse(p4info_data(), p4_info)
+    return p4_info
+
+
+@pytest.fixture
+def p4info_indexer(p4info) -> P4InfoIndexer:
+    """docstring."""
+    return P4InfoIndexer(p4info)
