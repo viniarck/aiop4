@@ -17,6 +17,10 @@
 
 `aiop4` is an `asyncio` client for [P4Runtime](https://github.com/p4lang/p4runtime/blob/v1.3.0/proto/p4/v1/p4runtime.proto). Breaking changes will likely happen until v1 is released.
 
+## How to install
+
+- `poetry add aiop4` or `pip install aiop4`
+
 ## Examples
 
 - [L2 learning switch](./examples/l2_switch/l2_switch_app.py)
