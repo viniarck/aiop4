@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Iterable
+from typing import Iterable, Optional
 
 import grpc
 import p4.v1.p4runtime_pb2 as p4r_pb2
@@ -10,10 +10,18 @@ from p4.config.v1 import p4info_pb2
 
 from aiop4.utils import read_bytes_config, read_p4info_txt
 
+from .elems_info import ElementsP4Info
 from .exceptions import BecomePrimaryException
-from .p4info_indexer import P4InfoIndexer
 
 log = logging.getLogger(__name__)
+
+match_type = (
+    p4r_pb2.FieldMatch.Exact
+    | p4r_pb2.FieldMatch.Ternary
+    | p4r_pb2.FieldMatch.LPM
+    | p4r_pb2.FieldMatch.Range
+    | p4r_pb2.FieldMatch.Optional
+)
 
 
 class Client:
@@ -30,7 +38,7 @@ class Client:
         self.device_id = device_id
         self.election_id = election_id
         self.p4info: p4info_pb2.P4Info = None
-        self.p4info_indexer: P4InfoIndexer = None
+        self.elems_info: ElementsP4Info = None
 
         self.queue: asyncio.Queue = asyncio.Queue()
 
@@ -85,7 +93,6 @@ class Client:
         try:
             await self.stream_channel.write(req)
         except AioRpcError as exc:
-            # TODO better format this
             log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
             raise
 
@@ -119,13 +126,16 @@ class Client:
                     case "digest":
                         await self.queue.put(response)
                     case "arbitration":
+                        # TODO put on another internal queue
                         pass
                     case "packet":
-                        pass
+                        await self.queue.put(response)
                     case "idle_timeout_notification":
+                        # TODO put on another internal queue
                         pass
                     case "error":
                         log.error(f"Got StreamError {response}")
+                        await self.queue.put(response)
                     case "other":
                         pass
                     case _:
@@ -201,7 +211,7 @@ class Client:
 
         pipeline = await self.get_fwd_pipeline()
         self.p4info = pipeline.config.p4info
-        self.p4info_indexer = P4InfoIndexer(self.p4info)
+        self.elems_info = ElementsP4Info(self.p4info)
 
         return response
 
@@ -275,20 +285,32 @@ class Client:
     def new_table_entry(
         self,
         table: str,
-        field_matches: list[p4r_pb2.FieldMatch],
+        field_matches: dict[str, match_type],
         action: str,
-        action_params: list[bytes],
+        action_params: Optional[list[bytes]] = None,
+        *,
         priority=0,
         idle_timeout_ns=0,
     ) -> p4r_pb2.Entity:
         """new_table_entry."""
         # TODO raise specific err
-        table = self.p4info_indexer.tables[table]
-        action = self.p4info_indexer.actions[action]
+        action_params = action_params if action_params else []
+        table = self.elems_info.tables[table]
+        action = self.elems_info.actions[action]
         return p4r_pb2.Entity(
             table_entry=p4r_pb2.TableEntry(
                 table_id=table.preamble.id,
-                match=field_matches,
+                match=[
+                    p4r_pb2.FieldMatch(
+                        **{
+                            "field_id": self.elems_info.table_match_fields[
+                                (table.preamble.name, k)
+                            ].id,
+                            f"{v.__class__.__name__.lower()}": v,
+                        }
+                    )
+                    for k, v in field_matches.items()
+                ],
                 action=p4r_pb2.TableAction(
                     action=p4r_pb2.Action(
                         action_id=action.preamble.id,
