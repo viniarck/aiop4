@@ -48,6 +48,10 @@ class Client:
         self._is_primary = asyncio.Event()
         self._stream_control_task: asyncio.Task = None
 
+    @property
+    def host_device(self) -> str:
+        return f"{self.host}:{self.device_id}"
+
     def is_primary(self) -> bool:
         """Check if this client is the primary controller."""
         if self._is_primary.is_set():
@@ -98,10 +102,7 @@ class Client:
 
         response = await self.stream_channel.read()
         which_update = response.WhichOneof("update")
-        log.debug(
-            f"Got message {which_update} from device {self.device_id} "
-            f"{self.host} {response}"
-        )
+        log.debug(f"Got message {which_update} from {self.host_device} {response}")
         if which_update == "arbitration":
             self._is_primary.set()
         else:
@@ -112,9 +113,7 @@ class Client:
     async def stream_control(self):
         """stream_control."""
         try:
-            log.info(
-                f"Starting stream_control for device_id {self.device_id} {self.host}"
-            )
+            log.info(f"Starting stream_control for {self.host_device}")
             response = await self.stream_channel.read()
             while response != grpc.aio.EOF:
                 which_update = response.WhichOneof("update")
@@ -158,6 +157,7 @@ class Client:
             atomicity=atomicity,
         )
         try:
+            log.debug(f"Sending WriteRequest to {self.host_device} {req}")
             return await self._stub.Write(req)
         except AioRpcError as exc:
             log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
