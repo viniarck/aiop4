@@ -55,7 +55,7 @@ control IngressImpl(inout headers hdr, inout metadata meta, inout standard_metad
         mark_to_drop(standard_metadata);
     }
     action learn_mac() {
-        digest<digest_t>(0, {hdr.ethernet.srcAddr, standard_metadata.ingress_port});
+        digest<digest_t>(1, {hdr.ethernet.srcAddr, standard_metadata.ingress_port});
     }
     action fwd(PortId_t eg_port) {
         standard_metadata.egress_spec = eg_port;
