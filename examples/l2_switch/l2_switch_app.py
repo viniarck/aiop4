@@ -15,100 +15,102 @@ logging.basicConfig(level=logging.DEBUG, format=log_format)
 log = logging.getLogger(__name__)
 
 
-async def learn_mac(client: Client, digest: p4r_pb2.DigestList):
-    entities = []
-    for item in digest.data:
-        src_addr = item.struct.members[0].bitstring
-        in_port = item.struct.members[1].bitstring
-        smac_entry = client.new_table_entry(
-            "IngressImpl.smac",
-            {"hdr.ethernet.srcAddr": p4r_pb2.FieldMatch.Exact(value=src_addr)},
-            "NoAction",
+class L2SWClient:
+    """L2SWClient."""
+
+    def __init__(
+        self,
+        client: Client,
+        p4info_path: str,
+        config_json_path: str,
+        multicast_group=0xAB,
+        ports=None,
+    ) -> None:
+        """L2SWClient."""
+        self.client = client
+        self.p4info_path = p4info_path
+        self.config_json_path = config_json_path
+        self.multicast_group = multicast_group
+        self.ports = ports if ports else list(range(0, 7))
+        self.consumer_task: asyncio.Task = None
+        self.keep_consuming = True
+
+    async def learn_mac(self, digest: p4r_pb2.DigestList):
+        """learn_mac digest task."""
+        entities = []
+        for item in digest.data:
+            src_addr = item.struct.members[0].bitstring
+            in_port = item.struct.members[1].bitstring
+            smac_entry = self.client.new_table_entry(
+                "IngressImpl.smac",
+                {"hdr.ethernet.srcAddr": p4r_pb2.FieldMatch.Exact(value=src_addr)},
+                "NoAction",
+            )
+            dmac_entry = self.client.new_table_entry(
+                "IngressImpl.dmac",
+                {"hdr.ethernet.dstAddr": p4r_pb2.FieldMatch.Exact(value=src_addr)},
+                "IngressImpl.fwd",
+                [in_port],
+            )
+            entities.extend([smac_entry, dmac_entry])
+
+        await self.client.insert_entity(*entities)
+        await self.client.ack_digest_list(digest)
+
+    async def digests_consumer(self) -> None:
+        """digests consumer."""
+        while self.keep_consuming:
+            msg = await self.client.queue.get()
+            log.debug(f"Consumer device_id {self.client.device_id} got message {msg}")
+            match msg.WhichOneof("update"):
+                case "digest":
+                    asyncio.create_task(self.learn_mac(msg.digest))
+                case "error":
+                    log.error(f"Got StreamError {msg}")
+                case _:
+                    pass
+
+    async def setup_config(self) -> None:
+        """Setup config."""
+        log.info(f"Setting up config for {self.client.host_device}")
+        await self.client.become_primary_or_raise(timeout=5)
+        self.consumer_task = asyncio.create_task(self.digests_consumer())
+        await self.client.set_fwd_pipeline_from_file(
+            self.p4info_path, self.config_json_path
         )
-        dmac_entry = client.new_table_entry(
+        await self.client.enable_digest(
+            self.client.elems_info.digests["digest_t"].preamble.id
+        )
+        await self.client.insert_multicast_group(self.multicast_group, self.ports)
+        table_entry = self.client.new_table_entry(
             "IngressImpl.dmac",
-            {"hdr.ethernet.dstAddr": p4r_pb2.FieldMatch.Exact(value=src_addr)},
-            "IngressImpl.fwd",
-            [in_port],
+            {},
+            "IngressImpl.broadcast",
+            [struct.pack("!h", self.multicast_group)],
         )
-        entities.extend([smac_entry, dmac_entry])
-
-    await client.insert_entity(*entities)
-    await client.ack_digest_list(digest)
-
-
-async def consumer(client: Client, queue: asyncio.Queue):
-    while True:
-        msg = await queue.get()
-        log.debug(f"Consumer device_id {client.device_id} got message {msg}")
-        match msg.WhichOneof("update"):
-            case "digest":
-                asyncio.create_task(learn_mac(client, msg.digest))
-            case "error":
-                log.error(f"Got StreamError {msg}")
-            case _:
-                pass
-
-
-async def l2_client(
-    host: str, device_id: int, p4_info_txt_path: str, config_json_path: str
-):
-    """l2_client."""
-
-    client = Client(host=host, device_id=device_id)
-    tasks = set()
-    log.info(f"Starting Client {client.host_device}")
-    log.info(await client.get_capabilities())
-
-    await client.become_primary_or_raise(timeout=5)
-    task = asyncio.create_task(consumer(client, client.queue))
-    tasks.add(task)
-    await client.set_fwd_pipeline_from_file(p4_info_txt_path, config_json_path)
-    await client.enable_digest(client.elems_info.digests["digest_t"].preamble.id)
-
-    ports, mgrp = [0, 1, 2, 3, 4, 5, 6, 7], 0xAB
-    await client.insert_multicast_group(mgrp, ports)
-    table_entry = client.new_table_entry(
-        "IngressImpl.dmac", {}, "IngressImpl.broadcast", [struct.pack("!h", mgrp)]
-    )
-    await client.modify_entity(table_entry)
+        await self.client.modify_entity(table_entry)
 
 
 async def main():
-    """main."""
-    p4_info_txt_path = os.getenv(
+    """main entry point for linear_topo.py that has two switches."""
+    p4info_path = os.getenv(
         "P4INFO_FILE", "~/repos/aiop4/examples/l2_switch/l2_switch.p4info.txt"
     )
     config_json_path = os.getenv(
         "P4CONFIG_JSON", "~/repos/aiop4/examples/l2_switch/l2_switch.json"
     )
-    assert os.path.isfile(
-        os.path.expanduser(p4_info_txt_path)
-    ), f"{p4_info_txt_path} isn't a file"
-    assert os.path.isfile(
-        os.path.expanduser(config_json_path)
-    ), f"{config_json_path} isn't a file"
+    assert os.path.isfile(os.path.expanduser(p4info_path)), p4info_path
+    assert os.path.isfile(os.path.expanduser(config_json_path)), config_json_path
 
-    client1 = asyncio.create_task(
-        l2_client(
-            host="localhost:9559",
-            device_id=1,
-            p4_info_txt_path=p4_info_txt_path,
-            config_json_path=config_json_path,
-        )
-    )
-    client2 = asyncio.create_task(
-        l2_client(
-            host="localhost:9560",
-            device_id=2,
-            p4_info_txt_path=p4_info_txt_path,
-            config_json_path=config_json_path,
-        )
-    )
-    clients = [client1, client2]
-    await asyncio.gather(*clients)
-    input("Type any key to stop ")
+    client1 = L2SWClient(Client("localhost:9559", 1), p4info_path, config_json_path)
+    client2 = L2SWClient(Client("localhost:9560", 2), p4info_path, config_json_path)
+    await asyncio.gather(*[client1.setup_config(), client2.setup_config()])
+    await asyncio.gather(*[client1.digests_consumer(), client2.digests_consumer()])
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        print("Hit <C-c> to stop this app")
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
