@@ -5,7 +5,7 @@ from google.protobuf import text_format
 from p4.config.v1.p4info_pb2 import P4Info
 
 from aiop4.client import Client
-from aiop4.p4info_indexer import P4InfoIndexer
+from aiop4.elems_info import ElementsP4Info
 
 from .data import p4info_data
 
@@ -29,6 +29,6 @@ def p4info() -> P4Info:
 
 
 @pytest.fixture
-def p4info_indexer(p4info) -> P4InfoIndexer:
+def elems_info(p4info) -> ElementsP4Info:
     """docstring."""
-    return P4InfoIndexer(p4info)
+    return ElementsP4Info(p4info)

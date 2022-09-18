@@ -79,14 +79,14 @@ async def test_enable_digest(client) -> None:
     assert arg.updates[0].entity.digest_entry.digest_id == _id
 
 
-def test_new_table_entry(client, p4info_indexer) -> None:
+def test_new_table_entry(client, elems_info) -> None:
     """Test new_table_entry."""
-    client.p4info_indexer = p4info_indexer
+    client.elems_info = elems_info
     priority = 100
     idle_timeout_ns = 1000000000
     entity = client.new_table_entry(
         "IngressImpl.dmac",
-        [],
+        {},
         "IngressImpl.fwd",
         [b"\x01"],
         priority=priority,
@@ -103,12 +103,12 @@ async def test_set_fwd_pipeline(client):
     """test set_fwd_pipeline."""
 
     assert not client.p4info
-    assert not client.p4info_indexer
+    assert not client.elems_info
     await client._set_fwd_pipeline(p4r_pb2.ForwardingPipelineConfig())
     assert client._stub.SetForwardingPipelineConfig.call_count == 1
     assert client._stub.GetForwardingPipelineConfig.call_count == 1
     assert client.p4info
-    assert client.p4info_indexer
+    assert client.elems_info
 
 
 async def test_ack_digest_list(client):

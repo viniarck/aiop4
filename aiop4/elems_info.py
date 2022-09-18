@@ -1,15 +1,15 @@
 from p4.config.v1.p4info_pb2 import P4Info
 
 
-class P4InfoIndexer:
-    """P4InfoIndexer.
+class ElementsP4Info:
+    """ElementsP4Info.
 
     This class is responsible for indexing P4Info objects by a given attribute.
     By default it'll index objects by their fully qualified name.
     """
 
     def __init__(self, p4info: P4Info, iter_attr="name") -> None:
-        """P4InfoIndexer."""
+        """ElementsP4Info."""
         self.p4info: P4Info = p4info
 
         self.tables = self._index_by_preamble("tables", iter_attr)
