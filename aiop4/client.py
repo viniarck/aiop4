@@ -160,7 +160,7 @@ class Client:
             log.debug(f"Sending WriteRequest to {self.host_device} {req}")
             return await self._stub.Write(req)
         except AioRpcError as exc:
-            log.error(f"{str(exc)} payload {req.__class__.__name__}: {req}")
+            log.error(f"{str(exc)} payload {req.__class__.__name__} {req}")
             raise
 
     async def enable_digest(self, _id: int) -> None:
