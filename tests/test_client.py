@@ -154,3 +154,8 @@ async def test_delete_entity(client):
     client._op_entity = AsyncMock()
     await client.delete_entity(entity)
     client._op_entity.assert_called_with(entity, op_type=p4r_pb2.Update.Type.DELETE)
+
+
+def test_host_device_str(client):
+    """Test host_device str."""
+    assert client.host_device == f"{client.host}:{client.device_id}"
