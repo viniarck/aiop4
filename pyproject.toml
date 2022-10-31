@@ -9,7 +9,7 @@ repository = "https://github.com/viniarck/aiop4"
 keywords = ["p4", "p4runtime", "p4runtime-client", "client", "aiop4"]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.9"
 p4runtime = "1.4.0rc5"
 grpcio = "1.46.3"
 googleapis-common-protos = "1.54.0"
