@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Union
 
 import grpc
 import p4.v1.p4runtime_pb2 as p4r_pb2
@@ -15,13 +15,13 @@ from .exceptions import BecomePrimaryException
 
 log = logging.getLogger(__name__)
 
-match_type = (
-    p4r_pb2.FieldMatch.Exact
-    | p4r_pb2.FieldMatch.Ternary
-    | p4r_pb2.FieldMatch.LPM
-    | p4r_pb2.FieldMatch.Range
-    | p4r_pb2.FieldMatch.Optional
-)
+match_type = Union[
+    p4r_pb2.FieldMatch.Exact,
+    p4r_pb2.FieldMatch.Ternary,
+    p4r_pb2.FieldMatch.LPM,
+    p4r_pb2.FieldMatch.Range,
+    p4r_pb2.FieldMatch.Optional,
+]
 
 
 class Client:
@@ -121,24 +121,21 @@ class Client:
                     f"Got message {which_update} from device {self.device_id} "
                     f"{self.host} {response}"
                 )
-                match which_update:
-                    case "digest":
-                        await self.queue.put(response)
-                    case "arbitration":
-                        # TODO put on another internal queue
-                        pass
-                    case "packet":
-                        await self.queue.put(response)
-                    case "idle_timeout_notification":
-                        # TODO put on another internal queue
-                        pass
-                    case "error":
-                        log.error(f"Got StreamError {response}")
-                        await self.queue.put(response)
-                    case "other":
-                        pass
-                    case _:
-                        log.warning(f"Got unsupported update type {response}")
+                if which_update == "digest" or which_update == "packet":
+                    await self.queue.put(response)
+                elif which_update == "arbitration":
+                    # TODO put on another internal queue
+                    pass
+                elif which_update == "idle_timeout_notification":
+                    # TODO put on another internal queue
+                    pass
+                elif which_update == "error":
+                    log.error(f"Got StreamError {response}")
+                    await self.queue.put(response)
+                elif which_update == "other":
+                    pass
+                else:
+                    log.warning(f"Got unsupported update type {response}")
                 response = await self.stream_channel.read()
 
         except AioRpcError as e:
