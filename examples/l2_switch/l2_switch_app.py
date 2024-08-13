@@ -62,13 +62,13 @@ class L2SWClient:
         while self.keep_consuming:
             msg = await self.client.queue.get()
             log.debug(f"Consumer device_id {self.client.device_id} got message {msg}")
-            which_msg = msg.WhichOneof("update")
-            if which_msg == "digest":
-                asyncio.create_task(self.learn_mac(msg.digest))
-            elif which_msg == "error":
-                log.error(f"Got StreamError {msg}")
-            else:
-                pass
+            match msg.WhichOneof("update"):
+                case "digest":
+                    asyncio.create_task(self.learn_mac(msg.digest))
+                case "error":
+                    log.error(f"Got StreamError {msg}")
+                case _:
+                    pass
 
     async def setup_config(self) -> None:
         """Setup config."""
