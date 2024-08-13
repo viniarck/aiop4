@@ -21,7 +21,7 @@ pre-commit = "^2.20"
 flake8 = "^5.0"
 black = "^22.6"
 isort = "^5.10"
-tox = "^3.25"
+tox = "^4.17"
 pytest-cov = "^3.0"
 pytest-asyncio = "^0.19"
 
